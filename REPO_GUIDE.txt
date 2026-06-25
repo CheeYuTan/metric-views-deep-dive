@@ -24,7 +24,9 @@ Main files:
 
 - notebooks/deep_dives/
   Topic-specific notebooks for the first three standalone articles:
-  materialization, level of detail, and window semantics.
+  materialization, level of detail, and window semantics. The materialization
+  article starts with `00_materialization_base_tables.py` to create a larger
+  fact/dimension model before running `01_materialization_deep_dive.py`.
 
 - blogs/
   Plain-text blog drafts for the first three standalone deep-dive articles.
@@ -71,6 +73,8 @@ Suggested run path:
    - notebooks/03_query_lod_windows_and_materialization.py
    - notebooks/04_dashboard_story.py
 3. For the standalone article series, run notebooks/deep_dives after notebooks 01 and 02.
+   For the materialization article, run `notebooks/deep_dives/00_materialization_base_tables.py`
+   before `notebooks/deep_dives/01_materialization_deep_dive.py`.
 4. Set the catalog and schema widgets.
 5. Run notebooks 01 and 02 first to understand the model and base Metric View.
 6. Run notebook 03 to introduce materialization as an optimization strategy.
