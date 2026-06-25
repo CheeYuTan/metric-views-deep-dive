@@ -11,7 +11,6 @@
 # MAGIC Run `00_materialization_base_tables` first. That notebook creates:
 # MAGIC
 # MAGIC - `mat_fact_finance_daily`: large daily finance fact table
-# MAGIC - `mat_dim_*`: dimensions
 # MAGIC - `mat_dim_*`: dimension tables that the Metric View joins to the fact table
 # MAGIC
 # MAGIC Why a separate setup notebook?
@@ -20,7 +19,6 @@
 
 # COMMAND ----------
 
-from time import perf_counter
 import time
 
 dbutils.widgets.text("catalog", "lakemeter_catalog", "Catalog")
@@ -90,22 +88,6 @@ flowchart TB
   OPT --> MV
 """
 )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Requirements and Status
-# MAGIC
-# MAGIC Materialization for Metric Views is documented as **Public Preview**.
-# MAGIC
-# MAGIC Requirements and caveats to teach explicitly:
-# MAGIC
-# MAGIC - Serverless compute must be enabled because Lakeflow Spark Declarative Pipelines maintain the materializations.
-# MAGIC - A SQL warehouse or compute resource must run a supported runtime.
-# MAGIC - `mode` is currently `relaxed`.
-# MAGIC - Refresh has a lifecycle and can be asynchronous.
-# MAGIC - Queries may see different freshness depending on whether they hit a materialization or fall back to source.
-# MAGIC - RLS, column masks, ABAC policies, and invoker-dependent expressions are restricted.
 
 # COMMAND ----------
 
@@ -205,17 +187,48 @@ display(spark.sql(f"DESCRIBE EXTENDED {base_mv}"))
 # MAGIC %md
 # MAGIC ## Create Materialized Variant With Both Types
 # MAGIC
-# MAGIC This view demonstrates both materialization types:
+# MAGIC A materialized Metric View can maintain different physical structures behind the same query surface.
 # MAGIC
-# MAGIC - `semantic_snapshot`: unaggregated materialization for expensive source preparation.
-# MAGIC - `month_region_product_account`: aggregated materialization for common dashboard grains.
+# MAGIC In this tutorial:
 # MAGIC
-# MAGIC Aggregated materialization design:
-# MAGIC
-# MAGIC - Include common `GROUP BY` fields.
-# MAGIC - Include filter fields such as `fiscal_year`.
-# MAGIC - Materialize at the most detailed grain needed for expected rollups.
-# MAGIC - Use additive measures for rollup matching.
+# MAGIC - `semantic_snapshot` is **unaggregated**: it stores prepared rows after the Metric View has applied joins and fields.
+# MAGIC - `month_region_product_account` is **aggregated**: it stores precomputed metric results at a chosen dashboard grain.
+
+# COMMAND ----------
+
+display(
+    spark.createDataFrame(
+        [
+            (
+                "unaggregated",
+                "semantic_snapshot",
+                "Prepared row-level model after Metric View joins and fields.",
+                "When source preparation is expensive or query shapes vary.",
+            ),
+            (
+                "aggregated",
+                "month_region_product_account",
+                "Precomputed GROUP BY result for selected dimensions and measures.",
+                "When dashboards repeatedly query the same grain or a coarser grain.",
+            ),
+        ],
+        ["materialization_type", "demo_name", "what_it_stores", "best_for"],
+    )
+)
+
+# COMMAND ----------
+
+render_mermaid(
+    """
+flowchart LR
+  MV["Metric View"]
+  UNAGG["Unaggregated<br/>prepared rows"]
+  AGG["Aggregated<br/>precomputed GROUP BY"]
+
+  MV --> UNAGG
+  MV --> AGG
+"""
+)
 
 # COMMAND ----------
 
@@ -324,7 +337,7 @@ display(spark.sql(f"DESCRIBE EXTENDED {full_mat_mv}"))
 # MAGIC 3. **Unaggregated match**: use the prepared source snapshot if no aggregate can serve the query.
 # MAGIC 4. **Source fallback**: read from the original source if no materialization can serve the query.
 # MAGIC
-# MAGIC The rest of this notebook tests each path with `EXPLAIN EXTENDED`.
+# MAGIC The rest of this notebook runs one simple SQL query per path. After each query, open Query Profile and compare the materialization name with the expected result.
 
 # COMMAND ----------
 
@@ -353,82 +366,38 @@ flowchart TB
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Compare Query Paths
+# MAGIC %md
+# MAGIC ## Three Simple Rewrite Examples
 # MAGIC
-# MAGIC This is directional. Cache and warehouse state affect timing.
-# MAGIC
-# MAGIC The stronger proof is in the query plans below.
+# MAGIC Instead of timing the queries, we will inspect the optimizer plan. Each example asks a simple question and checks which materialization the optimizer chooses.
 
 # COMMAND ----------
-
-manual_sql = f"""
-SELECT
-  c.fiscal_year,
-  c.fiscal_month,
-  e.region,
-  p.product_family,
-  a.account_category,
-  SUM(f.amount) FILTER (WHERE a.account_category = 'Revenue') AS revenue
-FROM {catalog}.{schema}.mat_fact_finance_daily f
-JOIN {catalog}.{schema}.mat_dim_calendar c
-  ON f.transaction_date = c.calendar_date
-JOIN {catalog}.{schema}.mat_dim_entity e
-  ON f.entity_id = e.entity_id
-JOIN {catalog}.{schema}.mat_dim_product p
-  ON f.product_id = p.product_id
-JOIN {catalog}.{schema}.mat_dim_account a
-  ON f.account_id = a.account_id
-WHERE c.fiscal_year = 2025
-GROUP BY ALL
-"""
-
-base_mv_sql = f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  product_family,
-  account_category,
-  MEASURE(revenue) AS revenue
-FROM {base_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-
-mat_mv_sql = f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  product_family,
-  account_category,
-  MEASURE(revenue) AS revenue
-FROM {full_mat_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-
-def timed_count(label: str, query: str) -> tuple[str, int, float]:
-    start = perf_counter()
-    rows = spark.sql(query).collect()
-    elapsed = perf_counter() - start
-    return label, len(rows), elapsed
 
 display(
     spark.createDataFrame(
         [
-            timed_count("manual_source_grouping", manual_sql),
-            timed_count("base_metric_view", base_mv_sql),
-            timed_count("materialized_metric_view", mat_mv_sql),
+            (
+                "1. Exact match",
+                "Revenue by year, month, region, product family, and account category",
+                "Same grain as the aggregated materialization",
+                "month_region_product_account",
+            ),
+            (
+                "2. Rollup match",
+                "Revenue by year, month, and region",
+                "Coarser than the aggregated materialization, using additive revenue",
+                "month_region_product_account",
+            ),
+            (
+                "3. Unaggregated match",
+                "Unique customers by year, month, and region",
+                "Non-additive distinct count cannot roll up safely",
+                "semantic_snapshot",
+            ),
         ],
-        ["query_pattern", "row_count", "elapsed_seconds"],
+        ["scenario", "business_question", "why_this_path", "expected_materialization"],
     )
 )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Exact Match, Rollup Match, and Unaggregated Fallback
 
 # COMMAND ----------
 
@@ -447,58 +416,113 @@ flowchart TB
 
 # COMMAND ----------
 
-rewrite_queries = {
-    "exact_match": {
-        "expected": "month_region_product_account",
-        "sql": f"""
-          SELECT fiscal_year, fiscal_month, region, product_family, account_category, MEASURE(revenue) AS revenue
-          FROM {full_mat_mv}
-          WHERE fiscal_year = 2025
-          GROUP BY ALL
-        """,
-    },
-    "rollup_match": {
-        "expected": "month_region_product_account",
-        "sql": f"""
-          SELECT fiscal_year, fiscal_month, region, MEASURE(revenue) AS revenue
-          FROM {full_mat_mv}
-          WHERE fiscal_year = 2025
-          GROUP BY ALL
-        """,
-    },
-    "unaggregated_fallback_for_distinct": {
-        "expected": "semantic_snapshot",
-        "sql": f"""
-          SELECT fiscal_year, fiscal_month, region, MEASURE(unique_customers) AS unique_customers
-          FROM {full_mat_mv}
-          WHERE fiscal_year = 2025
-          GROUP BY ALL
-        """,
-    },
-}
+# MAGIC %md
+# MAGIC ### Example 1: Exact Match
+# MAGIC
+# MAGIC The query groups by the **same dimensions** as the aggregated materialization:
+# MAGIC
+# MAGIC ```text
+# MAGIC fiscal_year + fiscal_month + region + product_family + account_category
+# MAGIC ```
+# MAGIC
+# MAGIC Because the materialization already stores `revenue` at exactly this grain, the optimizer should use `month_region_product_account` directly.
+# MAGIC
+# MAGIC After running the query, open **Query Profile** and look for the materialized relation name containing:
+# MAGIC
+# MAGIC ```text
+# MAGIC month_region_product_account
+# MAGIC ```
 
-evidence = []
-for scenario, config in rewrite_queries.items():
-    plan = "\n".join(row[0] for row in spark.sql(f"EXPLAIN EXTENDED {config['sql']}").collect())
-    materialization_lines = [line.strip() for line in plan.splitlines() if "__materialization_mat_" in line]
-    evidence.append(
-        (
-            scenario,
-            config["expected"],
-            config["expected"] in plan,
-            "\n".join(materialization_lines[:3]),
-        )
+# COMMAND ----------
+
+display(
+    spark.sql(
+        f"""
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  product_family,
+  account_category,
+  MEASURE(revenue) AS revenue
+FROM {full_mat_mv}
+WHERE fiscal_year = 2025
+GROUP BY ALL
+"""
     )
-
-evidence_df = spark.createDataFrame(
-    evidence,
-    ["scenario", "expected_materialization", "used_expected_materialization", "evidence_lines"],
 )
-display(evidence_df)
 
-failures = [row["scenario"] for row in evidence_df.collect() if not row["used_expected_materialization"]]
-if failures:
-    raise AssertionError(f"Materialization expectations failed: {failures}")
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Example 2: Rollup Match
+# MAGIC
+# MAGIC This query asks for a **coarser grain**:
+# MAGIC
+# MAGIC ```text
+# MAGIC fiscal_year + fiscal_month + region
+# MAGIC ```
+# MAGIC
+# MAGIC The aggregated materialization is more detailed because it also has `product_family` and `account_category`.
+# MAGIC
+# MAGIC Since `revenue` is additive, Databricks can read `month_region_product_account` and roll it up.
+# MAGIC
+# MAGIC After running the query, open **Query Profile**. You should still see:
+# MAGIC
+# MAGIC ```text
+# MAGIC month_region_product_account
+# MAGIC ```
+
+# COMMAND ----------
+
+display(
+    spark.sql(
+        f"""
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  MEASURE(revenue) AS revenue
+FROM {full_mat_mv}
+WHERE fiscal_year = 2025
+GROUP BY ALL
+"""
+    )
+)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Example 3: Unaggregated Match
+# MAGIC
+# MAGIC This query asks for `unique_customers`, which is a `COUNT(DISTINCT ...)` measure.
+# MAGIC
+# MAGIC Distinct counts are not additive, so Databricks should not roll them up from the aggregated revenue materialization.
+# MAGIC
+# MAGIC Because this Metric View also has an unaggregated materialization, the optimizer can use `semantic_snapshot` instead of recomputing all fact-to-dimension joins from scratch.
+# MAGIC
+# MAGIC After running the query, open **Query Profile** and look for:
+# MAGIC
+# MAGIC ```text
+# MAGIC semantic_snapshot
+# MAGIC ```
+
+# COMMAND ----------
+
+display(
+    spark.sql(
+        f"""
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  MEASURE(unique_customers) AS unique_customers
+FROM {full_mat_mv}
+WHERE fiscal_year = 2025
+GROUP BY ALL
+"""
+    )
+)
 
 # COMMAND ----------
 
@@ -508,6 +532,8 @@ if failures:
 # MAGIC To show true source fallback, create an aggregated-only materialized Metric View.
 # MAGIC
 # MAGIC Because it has no unaggregated materialization, a query that cannot use the aggregate must fall back to the source.
+# MAGIC
+# MAGIC The query below asks for `unique_customers`, but the only materialization in this view is `revenue_only_aggregate`. Since that aggregate cannot answer a distinct-customer query, Query Profile should not show `revenue_only_aggregate`.
 
 # COMMAND ----------
 
@@ -563,209 +589,17 @@ while status != "Succeeded" and time.time() < deadline:
 if status != "Succeeded":
     raise TimeoutError(f"Aggregated-only refresh did not succeed. Last status: {status}")
 
-source_fallback_plan = "\n".join(
-    row[0]
-    for row in spark.sql(
+display(
+    spark.sql(
         f"""
-EXPLAIN EXTENDED
-SELECT fiscal_year, fiscal_month, region, MEASURE(unique_customers) AS unique_customers
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  MEASURE(unique_customers) AS unique_customers
 FROM {agg_only_mv}
 WHERE fiscal_year = 2025
 GROUP BY ALL
 """
-    ).collect()
-)
-
-print(source_fallback_plan)
-assert "revenue_only_aggregate" not in source_fallback_plan
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Query Rewrite Mode: Why `relaxed` Matters
-# MAGIC
-# MAGIC The materialization block uses:
-# MAGIC
-# MAGIC ```yaml
-# MAGIC materialization:
-# MAGIC   mode: relaxed
-# MAGIC ```
-# MAGIC
-# MAGIC In `relaxed` mode, the optimizer checks whether a materialization has the fields and measures needed to answer the query. It does **not** fully validate every freshness or session setting concern before rewrite.
-# MAGIC
-# MAGIC Practical implication:
-# MAGIC
-# MAGIC - A query that matches a materialization uses the last successful refresh.
-# MAGIC - A query that does not match can fall back to live source data.
-# MAGIC - If consistency matters more than absolute freshness, an unaggregated materialization can help keep varied query shapes on the same prepared snapshot.
-# MAGIC - Align the refresh schedule with the upstream source pipeline.
-
-# COMMAND ----------
-
-render_mermaid(
-    """
-flowchart LR
-  Q["Query"]
-  CHECK["Relaxed rewrite check<br/>Has needed fields/measures?"]
-  MAT["Use last refreshed materialization"]
-  SRC["Fallback to source"]
-
-  Q --> CHECK
-  CHECK -->|match| MAT
-  CHECK -->|no match| SRC
-"""
-)
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            ("Freshness", "Relaxed mode does not prove the materialization is fresher than source for every query."),
-            ("SQL settings", "Relaxed mode does not fully compare settings such as timezone or ANSI mode."),
-            ("Determinism", "Relaxed mode does not fully prove every materialized expression is deterministic."),
-            ("Design response", "Schedule materialization after source updates, or use an unaggregated materialization for snapshot consistency."),
-        ],
-        ["relaxed_mode_topic", "teaching_note"],
     )
 )
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Additive Measure Rules
-# MAGIC
-# MAGIC Rollup matching depends on additive measures.
-# MAGIC
-# MAGIC In this notebook:
-# MAGIC
-# MAGIC - `revenue`, `cogs`, and `opex` are additive and can roll up from `month_region_product_account`.
-# MAGIC - `unique_customers` is `COUNT(DISTINCT customer_id)`, so it is non-additive and should not roll up from partial aggregates.
-# MAGIC
-# MAGIC The docs list additive functions such as `SUM`, `COUNT`, `MIN`, `MAX`, boolean aggregates, and bitwise aggregates. Distinct aggregates, medians, percentiles, window measures, and measures that combine multiple aggregate functions are not good rollup candidates.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            ("revenue", "SUM via source Metric View", "Yes", "Can roll up from aggregated materialization."),
-            ("cogs", "SUM via source Metric View", "Yes", "Can roll up from aggregated materialization."),
-            ("opex", "SUM via source Metric View", "Yes", "Can roll up from aggregated materialization."),
-            ("unique_customers", "COUNT(DISTINCT customer_id)", "No", "Needs exact match, unaggregated match, or source fallback."),
-            ("revenue_per_customer", "Revenue divided by distinct customers", "No", "Composed from a non-additive denominator."),
-        ],
-        ["measure", "definition_pattern", "rollup_candidate", "why"],
-    )
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Materialization Lifecycle
-# MAGIC
-# MAGIC Important lifecycle behavior to remember:
-# MAGIC
-# MAGIC - Creating a Metric View with materialization triggers an initial refresh.
-# MAGIC - While the refresh is running, the Metric View remains queryable, but rewrite might fall back to source until materializations are ready.
-# MAGIC - Modifying the Metric View updates the definition immediately.
-# MAGIC - Existing materializations are not used for rewrite until the next refresh completes.
-# MAGIC - Changing the schedule does not itself trigger a refresh.
-# MAGIC - If no schedule is defined, you need manual refreshes after the initial update.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            ("Create with materialization", "Managed Lakeflow pipeline is created and initial refresh starts."),
-            ("Query during initial refresh", "Metric View is queryable; rewrite may fall back to source until materialization is ready."),
-            ("Modify definition", "Definition changes immediately; materialization use resumes after refresh."),
-            ("Change schedule", "Schedule changes do not automatically trigger a refresh."),
-            ("Manual refresh", f"REFRESH MATERIALIZED VIEW {full_mat_mv}"),
-        ],
-        ["lifecycle_event", "behavior"],
-    )
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## How to Verify Materialization
-# MAGIC
-# MAGIC The docs describe two verification paths:
-# MAGIC
-# MAGIC 1. `DESCRIBE EXTENDED` to inspect refresh information.
-# MAGIC 2. `EXPLAIN EXTENDED` or Query Profile to verify query rewrite.
-# MAGIC
-# MAGIC In this notebook, we use `DESCRIBE EXTENDED` and `EXPLAIN EXTENDED` because they are reproducible in notebook cells.
-
-# COMMAND ----------
-
-refresh_info = spark.sql(f"DESCRIBE EXTENDED {full_mat_mv}").where(
-    "col_name IN ('Latest Refresh Status', 'Latest Refresh', 'Refresh Schedule')"
-)
-display(refresh_info)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Known Restrictions and Operational Notes
-# MAGIC
-# MAGIC These are not all safe to force in a demo notebook, but they are important for production design:
-# MAGIC
-# MAGIC - Materialization is not supported when the Metric View or source tables use RLS, column masks, or ABAC policies.
-# MAGIC - Invoker-dependent expressions such as `current_user()` and `is_member()` are not supported with materialization.
-# MAGIC - After materialization is created, changing owner has restrictions.
-# MAGIC - For Metric Views with one-to-many joins, only exact match is eligible.
-# MAGIC - Refreshing materializations incurs Lakeflow usage.
-# MAGIC - Materialized views use incremental refresh whenever possible, subject to the same kinds of source and plan restrictions as regular materialized views.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            ("Security policies", "RLS, column masks, and ABAC can prevent materialization."),
-            ("Invoker-dependent expressions", "Avoid current_user(), is_member(), and similar expressions in materialized Metric Views."),
-            ("Ownership", "Owner changes are restricted after materialization exists."),
-            ("One-to-many joins", "Only exact match is eligible for materialized Metric Views with one-to-many joins."),
-            ("Billing", "Refresh work runs through managed Lakeflow pipelines and incurs usage."),
-            ("Incremental refresh", "Used when possible, subject to materialized view limitations."),
-        ],
-        ["topic", "production_note"],
-    )
-)
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC ## Documentation Coverage Checklist
-# MAGIC
-# MAGIC This checklist maps the notebook to the major sections of the Databricks materialization documentation.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            ("Definition phase", "Create Metric View YAML with materialization block.", "Covered"),
-            ("Query execution", "Compare manual, base Metric View, and materialized Metric View queries.", "Covered"),
-            ("Requirements", "Serverless/Public Preview/runtime caveats explained.", "Covered"),
-            ("Configuration reference", "schedule, mode, unaggregated, aggregated.", "Covered"),
-            ("Relaxed mode", "Freshness/settings/determinism caveats explained.", "Covered"),
-            ("Aggregated type", "month_region_product_account materialization.", "Covered"),
-            ("Unaggregated type", "semantic_snapshot materialization.", "Covered"),
-            ("Exact match", "Assert plan uses month_region_product_account.", "Covered"),
-            ("Rollup match", "Assert plan uses month_region_product_account for coarser query.", "Covered"),
-            ("Unaggregated match", "Assert non-additive query uses semantic_snapshot.", "Covered"),
-            ("Source fallback", "Aggregated-only view proves no aggregate path for unique_customers.", "Covered"),
-            ("Additive measures", "Table explains additive and non-additive candidates.", "Covered"),
-            ("Verify materialization", "DESCRIBE EXTENDED and EXPLAIN EXTENDED examples.", "Covered"),
-            ("Lifecycle", "Create, modify, schedule, manual refresh behavior explained.", "Covered"),
-            ("Known restrictions", "Security, invoker-dependent, owner, one-to-many, billing notes.", "Covered"),
-        ],
-        ["documentation_topic", "notebook_evidence", "status"],
-    )
-)
-

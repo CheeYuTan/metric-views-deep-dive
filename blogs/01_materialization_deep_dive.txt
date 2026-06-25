@@ -31,59 +31,7 @@ The fact table scale comes from:
 
 That gives the optimizer something meaningful to accelerate without making the tutorial painfully slow to run.
 
-```mermaid
-erDiagram
-  MAT_FACT_FINANCE_DAILY {
-    string transaction_id
-    date transaction_date
-    string entity_id
-    string product_id
-    string segment_id
-    string account_id
-    string customer_id
-    double amount
-  }
-
-  MAT_DIM_CALENDAR {
-    date calendar_date
-    date fiscal_month
-    int fiscal_year
-    string fiscal_quarter
-  }
-
-  MAT_DIM_ENTITY {
-    string entity_id
-    string entity_name
-    string country
-    string region
-  }
-
-  MAT_DIM_PRODUCT {
-    string product_id
-    string product_name
-    string product_family
-    string business_unit
-  }
-
-  MAT_DIM_SEGMENT {
-    string segment_id
-    string segment_name
-    string segment_group
-  }
-
-  MAT_DIM_ACCOUNT {
-    string account_id
-    string account_name
-    string account_category
-    string statement_section
-  }
-
-  MAT_FACT_FINANCE_DAILY }o--|| MAT_DIM_CALENDAR : transaction_date
-  MAT_FACT_FINANCE_DAILY }o--|| MAT_DIM_ENTITY : entity_id
-  MAT_FACT_FINANCE_DAILY }o--|| MAT_DIM_PRODUCT : product_id
-  MAT_FACT_FINANCE_DAILY }o--|| MAT_DIM_SEGMENT : segment_id
-  MAT_FACT_FINANCE_DAILY }o--|| MAT_DIM_ACCOUNT : account_id
-```
+[Insert Diagram 1: Star schema showing MAT_FACT_FINANCE_DAILY joined to calendar, entity, product, segment, and account dimensions. Rendered in notebook 00.]
 
 ## The Performance Problem
 
@@ -116,40 +64,9 @@ Metric View materialization keeps the semantic surface stable.
 
 ## Materialization Architecture
 
-```mermaid
-flowchart TB
-  USER["User query<br/>SELECT ... MEASURE(...)"]
-  MV["mat_finance_metric_view_materialized<br/>Metric View surface"]
-  PIPE["Managed Lakeflow pipeline"]
-  SNAP["semantic_snapshot<br/>unaggregated materialization"]
-  AGG["month_region_product_account<br/>aggregated materialization"]
-  OPT["Optimizer<br/>aggregate-aware rewrite"]
-
-  MV --> PIPE
-  PIPE --> SNAP
-  PIPE --> AGG
-  USER --> OPT
-  OPT --> AGG
-  OPT --> SNAP
-  OPT --> MV
-```
+[Insert Diagram 2: Materialization architecture showing user query, Metric View, managed Lakeflow pipeline, unaggregated materialization, aggregated materialization, and optimizer rewrite. Rendered in notebook 01.]
 
 The user still queries the Metric View. Databricks decides the physical path.
-
-## Requirements and Caveats
-
-Materialization for Metric Views is in Public Preview.
-
-Requirements and caveats:
-
-- Serverless compute must be enabled because Lakeflow Spark Declarative Pipelines maintain the materializations.
-- A SQL warehouse or supported compute runtime is required.
-- `mode` is currently `relaxed`.
-- Refresh is asynchronous.
-- Materializations must finish refreshing before query rewrite can use them.
-- Queries can have different freshness depending on whether they hit a materialization or fall back to source.
-- RLS, column masks, ABAC policies, and invoker-dependent expressions have restrictions.
-- Refresh incurs Lakeflow usage.
 
 ## Step 1: Define the Non-Materialized Metric View
 
@@ -278,7 +195,6 @@ It precomputes the Metric View's source preparation:
 - joins
 - filters
 - fields
-- fields
 
 This is useful when query shapes vary.
 
@@ -339,34 +255,15 @@ The rewrite decision order is:
 3. Unaggregated match
 4. Source fallback
 
-```mermaid
-flowchart TB
-  Q["Metric View query"]
-  E{"Exact aggregate match?"}
-  R{"Rollup from aggregate possible?"}
-  U{"Unaggregated materialization exists?"}
-  S["Read source tables/view"]
-  EXACT["Use aggregated materialization<br/>exact match"]
-  ROLLUP["Use aggregated materialization<br/>rollup match"]
-  UNAGG["Use unaggregated materialization<br/>prepared source snapshot"]
+[Insert Diagram 3: Automatic query rewrite decision tree: exact match, rollup match, unaggregated match, source fallback. Rendered in notebook 01.]
 
-  Q --> E
-  E -->|yes| EXACT
-  E -->|no| R
-  R -->|yes| ROLLUP
-  R -->|no| U
-  U -->|yes| UNAGG
-  U -->|no| S
-```
-
-The rest of the tutorial proves each path using `EXPLAIN EXTENDED`.
+The rest of the tutorial proves each path with simple SQL queries and Query Profile screenshots.
 
 ## Step 4: Exact Match
 
 Exact match means the query asks for the same dimensions as the aggregate materialization.
 
 ```sql
-EXPLAIN EXTENDED
 SELECT
   fiscal_year,
   fiscal_month,
@@ -379,7 +276,7 @@ WHERE fiscal_year = 2025
 GROUP BY ALL;
 ```
 
-Expected plan evidence:
+After running it, open Query Profile and look for:
 
 ```text
 month_region_product_account
@@ -390,7 +287,6 @@ month_region_product_account
 Rollup match means the query asks for fewer dimensions, and the measure is additive.
 
 ```sql
-EXPLAIN EXTENDED
 SELECT
   fiscal_year,
   fiscal_month,
@@ -401,7 +297,7 @@ WHERE fiscal_year = 2025
 GROUP BY ALL;
 ```
 
-Expected plan evidence:
+After running it, open Query Profile and look for:
 
 ```text
 month_region_product_account
@@ -416,7 +312,6 @@ The engine can roll up from product/account grain to region grain because `reven
 It cannot safely roll up from partial aggregates.
 
 ```sql
-EXPLAIN EXTENDED
 SELECT
   fiscal_year,
   fiscal_month,
@@ -427,7 +322,7 @@ WHERE fiscal_year = 2025
 GROUP BY ALL;
 ```
 
-Expected plan evidence:
+After running it, open Query Profile and look for:
 
 ```text
 semantic_snapshot
@@ -447,19 +342,11 @@ It has an aggregate materialization for revenue, but no unaggregated materializa
 
 If you query `unique_customers`, there is no exact aggregate and no unaggregated snapshot, so the query must fall back to the source path.
 
-## Performance Comparison
+## What We Prove
 
-The notebook compares:
+The tutorial does not rely on stopwatch timings. Each section uses a simple query and then checks Query Profile.
 
-1. Manual grouping over the fact table with explicit dimension joins
-2. Querying `mat_finance_metric_view`
-3. Querying `mat_finance_metric_view_materialized`
-
-Elapsed time is useful, but it is not the strongest proof. Caching and warehouse load can change timings.
-
-The strongest proof is `EXPLAIN EXTENDED`.
-
-If the plan references `__materialization_mat_` and the expected materialization name, rewrite happened.
+If Query Profile shows the expected materialization name, rewrite happened.
 
 ## Design Guidance
 
@@ -490,7 +377,7 @@ It is a production semantic-layer pattern:
 - Define metrics once.
 - Keep user SQL stable.
 - Let Databricks maintain physical acceleration.
-- Verify rewrite with the query plan.
+- Verify rewrite with Query Profile.
 
 That is the difference between manually managing aggregate tables and operating a governed business semantic layer.
 
