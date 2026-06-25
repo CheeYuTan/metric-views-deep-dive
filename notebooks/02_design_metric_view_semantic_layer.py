@@ -262,6 +262,42 @@ lod_fields_yaml = """
         type: exact
         places: 2
       abbreviation: compact
+
+  - name: global_revenue_year_lod
+    expr: SUM(CASE WHEN source_grain = 'GL' AND scenario_id = 'ACTUAL' AND account_category = 'Revenue' THEN amount ELSE 0 END) OVER (PARTITION BY year(event_date))
+    comment: Fixed LOD field for total actual revenue by fiscal year.
+    display_name: Global Revenue Year LOD
+    format:
+      type: currency
+      currency_code: SGD
+      decimal_places:
+        type: exact
+        places: 2
+      abbreviation: compact
+
+  - name: apj_revenue_year_lod
+    expr: SUM(CASE WHEN source_grain = 'GL' AND scenario_id = 'ACTUAL' AND account_category = 'Revenue' AND region = 'APJ' THEN amount ELSE 0 END) OVER (PARTITION BY year(event_date))
+    comment: Fixed LOD field for APJ actual revenue by fiscal year.
+    display_name: APJ Revenue Year LOD
+    format:
+      type: currency
+      currency_code: SGD
+      decimal_places:
+        type: exact
+        places: 2
+      abbreviation: compact
+
+  - name: account_category_revenue_year_lod
+    expr: SUM(CASE WHEN source_grain = 'GL' AND scenario_id = 'ACTUAL' AND account_category = 'Revenue' THEN amount ELSE 0 END) OVER (PARTITION BY year(event_date), account_category)
+    comment: Fixed LOD field for actual revenue by fiscal year and account category.
+    display_name: Account Category Revenue Year LOD
+    format:
+      type: currency
+      currency_code: SGD
+      decimal_places:
+        type: exact
+        places: 2
+      abbreviation: compact
 """
 
 print(lod_fields_yaml)
@@ -487,6 +523,36 @@ lod_measures_yaml = """
     expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(apj_revenue_lod), 0)
     comment: Fixed LOD percentage where the APJ denominator is encoded in the LOD field.
     display_name: Percent of APJ Revenue Fixed LOD
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: pct_of_global_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(global_revenue_year_lod), 0)
+    comment: Fixed LOD percentage using the current fiscal year's global denominator.
+    display_name: Percent of Global Revenue Year Fixed LOD
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: pct_of_apj_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(apj_revenue_year_lod), 0)
+    comment: Fixed LOD percentage using the current fiscal year's APJ denominator.
+    display_name: Percent of APJ Revenue Year Fixed LOD
+    format:
+      type: percentage
+      decimal_places:
+        type: exact
+        places: 2
+
+  - name: pct_of_account_category_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(account_category_revenue_year_lod), 0)
+    comment: Fixed LOD percentage using fiscal year and account category denominator.
+    display_name: Percent of Account Category Revenue Year Fixed LOD
     format:
       type: percentage
       decimal_places:

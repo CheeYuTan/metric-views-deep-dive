@@ -1,0 +1,328 @@
+Title:
+Databricks Metric Views Deep Dive Part 1: Materialization Without Breaking the Semantic Layer
+
+Subtitle:
+How Metric View materialization accelerates governed metrics while keeping user-facing SQL unchanged.
+
+Audience:
+Analytics engineers, BI developers, and data platform teams who already understand basic SQL aggregation but want governed metrics that can scale.
+
+Core takeaway:
+Metric View materialization lets you separate what a metric means from how it is physically accelerated. Users continue querying the Metric View with MEASURE(), while Databricks can route matching queries to precomputed materializations.
+
+Opening:
+Metric Views are useful because they let teams define governed business metrics once. But a governed metric still has to be fast enough for dashboards, analysts, and AI/BI experiences.
+
+That is where materialization comes in.
+
+Materialization changes the production story. You can define a governed metric once, expose it to SQL, dashboards, and AI/BI tools, and then let Databricks maintain physical acceleration structures behind the scenes.
+
+The best part: the user query does not change.
+
+The problem:
+Semantic layers often hit a performance wall.
+
+At first, a Metric View is attractive because everyone can query the same governed definition:
+
+SELECT
+  fiscal_month,
+  region,
+  account_category,
+  MEASURE(actual_revenue) AS actual_revenue
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+But under the hood, the source may include:
+
+- A normalized semantic base view
+- Multiple fact grains
+- Dimension joins
+- Fixed LOD fields
+- Filtered measures
+- Composed measures
+
+Without acceleration, every dashboard refresh may repeat expensive preparation work.
+
+The old workaround:
+Before Metric View materialization, teams often built aggregate tables manually:
+
+- revenue_by_month_region
+- revenue_by_month_region_account
+- balance_by_month_entity_account
+- dashboard_summary_table
+
+This works for speed, but it creates a semantic problem. Users now need to know which table to query. Metric definitions can drift. Dashboard authors may accidentally mix base tables and aggregate tables.
+
+Metric View materialization solves a different problem:
+
+Keep one governed semantic surface, and let the optimizer decide whether a query can use precomputed data.
+
+Conceptual architecture:
+
+```mermaid
+flowchart TB
+  USER["User query<br/>SELECT ... MEASURE(...)"]
+  MV["finance_metric_view_materialized<br/>governed metric surface"]
+  PIPE["Managed Lakeflow pipeline"]
+  UNAGG["semantic_snapshot<br/>unaggregated materialization"]
+  AGG["exec_month_region_category<br/>aggregated materialization"]
+  OPT["Query optimizer<br/>aggregate-aware rewrite"]
+
+  MV --> PIPE
+  PIPE --> UNAGG
+  PIPE --> AGG
+  USER --> OPT
+  OPT --> AGG
+  OPT --> UNAGG
+  OPT --> MV
+```
+
+Two materialization types:
+
+1. Unaggregated materialization
+
+This materializes the prepared semantic source:
+
+- source view
+- joins
+- filters
+- fields
+
+It is useful when the source view is expensive or when query shapes are unpredictable.
+
+In the demo, this is:
+
+semantic_snapshot
+
+2. Aggregated materialization
+
+This precomputes selected dimensions and measures.
+
+It is useful when dashboards repeatedly query the same grain.
+
+In the demo, this is:
+
+exec_month_region_category
+
+It materializes:
+
+- fiscal_year
+- fiscal_month
+- region
+- account_category
+- actual_revenue
+- actual_expense
+- actual_cogs
+- actual_opex
+
+Materialized Metric View definition:
+
+CREATE OR REPLACE VIEW finance_metric_view_materialized
+WITH METRICS
+LANGUAGE YAML
+AS $$
+version: 1.1
+source: lakemeter_catalog.metric_views_lod_demo.finance_metric_view
+
+fields:
+  - name: fiscal_year
+    expr: fiscal_year
+  - name: fiscal_month
+    expr: fiscal_month
+  - name: region
+    expr: region
+  - name: account_category
+    expr: account_category
+
+measures:
+  - name: actual_revenue
+    expr: MEASURE(actual_revenue)
+  - name: actual_expense
+    expr: MEASURE(actual_expense)
+  - name: actual_cogs
+    expr: MEASURE(actual_cogs)
+  - name: actual_opex
+    expr: MEASURE(actual_opex)
+
+materialization:
+  schedule: every 6 hours
+  mode: relaxed
+  materialized_views:
+    - name: semantic_snapshot
+      type: unaggregated
+    - name: exec_month_region_category
+      type: aggregated
+      dimensions:
+        - fiscal_year
+        - fiscal_month
+        - region
+        - account_category
+      measures:
+        - actual_revenue
+        - actual_expense
+        - actual_cogs
+        - actual_opex
+$$;
+
+Important design choice:
+The base Metric View remains non-materialized.
+
+That means:
+
+- finance_metric_view is the semantic contract.
+- finance_metric_view_materialized is the optimized variant.
+
+This keeps the blog and notebooks easier to teach. First explain meaning, then explain acceleration.
+
+Refresh lifecycle:
+When you create a materialized Metric View, Databricks creates a managed Lakeflow pipeline and starts an initial refresh.
+
+You can inspect refresh status with:
+
+DESCRIBE EXTENDED finance_metric_view_materialized;
+
+Look for:
+
+- Latest Refresh Status
+- Latest Refresh
+- Refresh Schedule
+- Table properties containing the materialization pipeline ID
+
+Exact match:
+An exact match occurs when the query asks for the same dimensions as the aggregate materialization.
+
+Query:
+
+EXPLAIN EXTENDED
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  account_category,
+  MEASURE(actual_revenue) AS actual_revenue
+FROM finance_metric_view_materialized
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+Expected evidence:
+The plan should reference:
+
+exec_month_region_category
+
+That means the optimizer can read the precomputed aggregate directly.
+
+Rollup match:
+A rollup match occurs when the query asks for fewer dimensions than the aggregate materialization, and the measure is additive.
+
+Query:
+
+EXPLAIN EXTENDED
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  MEASURE(actual_revenue) AS actual_revenue
+FROM finance_metric_view_materialized
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+Expected evidence:
+The plan can still use:
+
+exec_month_region_category
+
+Then it rolls up from account-category level to region level.
+
+Non-additive fallback:
+Some measures cannot safely roll up from partial aggregates.
+
+Example:
+
+COUNT(DISTINCT source_record_id)
+
+Query:
+
+EXPLAIN EXTENDED
+SELECT
+  fiscal_year,
+  fiscal_month,
+  region,
+  MEASURE(transaction_count) AS transaction_count
+FROM finance_metric_view_materialized
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+Expected behavior:
+This should not roll up from an additive aggregate table. It should use an exact match if available, the unaggregated materialization, or the source fallback.
+
+In the demo, it uses:
+
+semantic_snapshot
+
+That is still useful because the expensive semantic source preparation has already been materialized.
+
+Why additive measures matter:
+Rollup matching requires additive measures.
+
+Good rollup candidates:
+
+- SUM
+- COUNT
+- MIN
+- MAX
+
+Poor rollup candidates:
+
+- COUNT(DISTINCT)
+- MEDIAN
+- Percentiles
+- Measures with multiple aggregates in one expression
+- Window measures
+
+Performance comparison:
+The notebook compares three query paths:
+
+1. Manual source grouping
+2. Base Metric View
+3. Materialized Metric View
+
+The timing table is useful, but it is not the strongest proof. Warehouse cache, data size, and concurrent load can affect elapsed time.
+
+The stronger proof is EXPLAIN EXTENDED.
+
+If the plan references __materialization_mat_ and the expected materialization name, the optimizer rewrite happened.
+
+What to screenshot:
+
+1. Materialized Metric View YAML block.
+2. DESCRIBE EXTENDED refresh status.
+3. EXPLAIN exact match using exec_month_region_category.
+4. EXPLAIN rollup match using exec_month_region_category.
+5. EXPLAIN non-additive fallback using semantic_snapshot.
+6. Timing comparison table.
+
+Key caveats:
+
+- Materialization requires serverless support.
+- The feature is in Public Preview.
+- Refresh incurs Lakeflow costs.
+- Relaxed mode does not verify freshness for every query.
+- Queries can have different freshness depending on whether they hit a materialization or fall back to source.
+- If strict consistency matters, consider an unaggregated materialization so broad query shapes read from the same prepared snapshot.
+- Row-level security, column masking, ABAC, and invoker-dependent expressions have restrictions.
+- Materialization is not a substitute for good metric design.
+
+Closing:
+Metric View materialization is powerful because it does not ask users to pick an aggregate table.
+
+The user continues to query the governed metric:
+
+MEASURE(actual_revenue)
+
+Databricks decides whether to read from an aggregate materialization, roll one up, use an unaggregated snapshot, or fall back to the source.
+
+That is the important shift:
+
+Performance becomes an implementation detail behind the semantic layer.
+

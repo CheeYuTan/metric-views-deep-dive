@@ -22,6 +22,13 @@ Main files:
 - notebooks/04_dashboard_story.py
   Explains and validates the dashboard datasets that map the semantic layer into dashboard pages.
 
+- notebooks/deep_dives/
+  Topic-specific notebooks for the first three standalone articles:
+  materialization, level of detail, and window semantics.
+
+- blogs/
+  Plain-text blog drafts for the first three standalone deep-dive articles.
+
 - sql/01_create_demo_data.sql
   Standalone SQL setup for dimensions, fact tables, and the semantic base view.
 
@@ -63,12 +70,13 @@ Suggested run path:
    - notebooks/02_design_metric_view_semantic_layer.py
    - notebooks/03_query_lod_windows_and_materialization.py
    - notebooks/04_dashboard_story.py
-3. Set the catalog and schema widgets.
-4. Run notebooks 01 and 02 first to understand the model and base Metric View.
-5. Run notebook 03 to introduce materialization as an optimization strategy.
-6. Inspect docs/documentation_coverage_matrix.txt to confirm the documented scenarios are covered.
-7. Use dashboard_queries/ to create AI/BI Dashboard datasets.
-8. Capture screenshots listed in docs/screenshot_checklist.txt for the blog.
+3. For the standalone article series, run notebooks/deep_dives after notebooks 01 and 02.
+4. Set the catalog and schema widgets.
+5. Run notebooks 01 and 02 first to understand the model and base Metric View.
+6. Run notebook 03 to introduce materialization as an optimization strategy.
+7. Inspect docs/documentation_coverage_matrix.txt to confirm the documented scenarios are covered.
+8. Use dashboard_queries/ to create AI/BI Dashboard datasets.
+9. Capture screenshots listed in docs/screenshot_checklist.txt for the blog.
 
 Lakemeter run path:
 

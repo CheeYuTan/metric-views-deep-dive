@@ -7,7 +7,7 @@ SELECT
   product_family,
   account_category,
   MEASURE(actual_revenue) AS actual_revenue,
-  MEASURE(pct_of_global_revenue_fixed_lod) AS pct_of_global_revenue,
+  MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue,
   MEASURE(pct_of_product_family_revenue_fixed_lod) AS pct_of_product_family_revenue,
   MEASURE(pct_of_region_revenue) AS pct_of_region_revenue,
   MEASURE(pct_of_visible_total_revenue_coarser_lod) AS pct_of_visible_total_revenue,

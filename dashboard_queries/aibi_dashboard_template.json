@@ -28,7 +28,7 @@
         "name": "lod_drilldown",
         "displayName": "LOD Drilldown",
         "queryLines": [
-          "SELECT region, entity_name, product_family, MEASURE(actual_revenue) AS actual_revenue, MEASURE(pct_of_global_revenue_fixed_lod) AS pct_of_global_revenue, MEASURE(pct_of_region_revenue) AS pct_of_region_revenue, MEASURE(pct_of_entity_product_visible_total) AS pct_of_visible_total FROM ${catalog}.${schema}.finance_metric_view WHERE fiscal_year = 2025 AND account_category = 'Revenue' GROUP BY ALL ORDER BY region, entity_name, product_family"
+          "SELECT region, entity_name, product_family, MEASURE(actual_revenue) AS actual_revenue, MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue, MEASURE(pct_of_region_revenue) AS pct_of_region_revenue, MEASURE(pct_of_entity_product_visible_total) AS pct_of_visible_total FROM ${catalog}.${schema}.finance_metric_view WHERE fiscal_year = 2025 AND account_category = 'Revenue' GROUP BY ALL ORDER BY region, entity_name, product_family"
         ]
       },
       {

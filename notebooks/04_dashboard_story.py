@@ -121,7 +121,7 @@ SELECT
   entity_name,
   product_family,
   MEASURE(actual_revenue) AS actual_revenue,
-  MEASURE(pct_of_global_revenue_fixed_lod) AS pct_of_global_revenue,
+  MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue,
   MEASURE(pct_of_region_revenue) AS pct_of_region_revenue,
   MEASURE(pct_of_entity_product_visible_total) AS pct_of_visible_total
 FROM {mv}

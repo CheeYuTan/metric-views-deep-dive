@@ -1,0 +1,277 @@
+Title:
+Databricks Metric Views Deep Dive Part 2: Level-of-Detail Analytics Without Rewriting SQL
+
+Subtitle:
+How fixed LOD and coarser LOD expressions help you control denominator grain in governed business metrics.
+
+Core takeaway:
+LOD expressions let a Metric View define the grain of a calculation independently of the fields visible in a query.
+
+Prerequisites and caveats:
+This article uses YAML 1.1 Metric Views. Coarser LOD uses window measures with range: all, so it depends on the window-measure support in your Databricks runtime. Treat the syntax and feature availability according to the current Databricks documentation for your cloud and runtime.
+
+Why this matters:
+Many dashboard metrics are not hard because of the numerator. They are hard because of the denominator.
+
+Examples:
+
+- Percent of global revenue
+- Percent of APJ revenue
+- Percent of region revenue
+- Percent of product-family revenue
+- Percent of visible total after filters
+
+These metrics look simple, but they are easy to define inconsistently across dashboards.
+
+The Metric View approach:
+Put the denominator logic in the semantic layer.
+
+Users can then ask:
+
+SELECT
+  region,
+  entity_name,
+  product_family,
+  MEASURE(actual_revenue),
+  MEASURE(pct_of_region_revenue)
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+They do not need to rewrite subqueries, CTEs, or custom joins.
+
+LOD mental model:
+
+```mermaid
+flowchart TB
+  QUERY["Visible query grain<br/>region + entity + product_family"]
+  NUM["Numerator<br/>actual_revenue at visible grain"]
+  FIXED["Fixed LOD denominator<br/>predefined grain"]
+  COARSER["Coarser LOD denominator<br/>visible grain minus selected fields"]
+  RATIO["Business percentage metric"]
+
+  QUERY --> NUM
+  QUERY --> FIXED
+  QUERY --> COARSER
+  NUM --> RATIO
+  FIXED --> RATIO
+  COARSER --> RATIO
+```
+
+Two LOD patterns:
+
+1. Fixed LOD
+
+Fixed LOD calculates at a predefined grain in the field expression itself.
+
+Example:
+
+fields:
+  - name: global_revenue_lod
+    expr: SUM(CASE WHEN source_grain = 'GL'
+                    AND scenario_id = 'ACTUAL'
+                    AND account_category = 'Revenue'
+                   THEN amount ELSE 0 END) OVER ()
+
+This means:
+
+- Calculate total actual revenue over the whole source.
+- Do not depend on the query's GROUP BY.
+- Store that value as a field.
+
+When a measure references this field, it must aggregate it:
+
+measures:
+  - name: pct_of_global_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(global_revenue_year_lod), 0)
+
+Why ANY_VALUE:
+The fixed LOD field is constant inside the relevant group. `ANY_VALUE()` tells SQL how to legally reference that field inside an aggregate measure expression.
+
+2. Coarser LOD
+
+Coarser LOD calculates at a broader grain than the query by excluding selected fields.
+
+Example:
+
+measures:
+  - name: region_revenue_excluding_entity
+    expr: SUM(amount) FILTER (
+      WHERE source_grain = 'GL'
+        AND scenario_id = 'ACTUAL'
+        AND account_category = 'Revenue'
+    )
+    window:
+      - order: entity_name
+        range: all
+        semiadditive: last
+
+  - name: pct_of_region_revenue
+    expr: MEASURE(actual_revenue) / NULLIF(MEASURE(region_revenue_excluding_entity), 0)
+
+This means:
+
+- The visible query can group by region and entity.
+- The denominator ignores entity.
+- The denominator remains scoped by other filters.
+
+Fixed LOD versus coarser LOD:
+
+Fixed LOD is best when the denominator should be stable and predefined.
+
+Coarser LOD is best when the denominator should adapt to query filters while excluding specific dimensions.
+
+Filtering behavior:
+Fixed LOD fields are computed before query-time filters.
+
+If you run:
+
+SELECT
+  region,
+  product_family,
+  MEASURE(actual_revenue),
+  MEASURE(pct_of_global_revenue_year_fixed_lod)
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+  AND region = 'APJ'
+GROUP BY ALL;
+
+The numerator is APJ revenue for fiscal year 2025, but the denominator is still whatever you encoded in the fixed LOD expression.
+
+That means you must be deliberate.
+
+If the fixed LOD is defined over all years, then this is a 2025 numerator divided by an all-year denominator. That is usually not the business metric you want.
+
+For a fiscal-year-aware denominator, partition the fixed LOD by fiscal year:
+
+fields:
+  - name: global_revenue_year_lod
+    expr: SUM(CASE WHEN source_grain = 'GL'
+                    AND scenario_id = 'ACTUAL'
+                    AND account_category = 'Revenue'
+                   THEN amount ELSE 0 END) OVER (PARTITION BY year(event_date))
+
+Then define:
+
+measures:
+  - name: pct_of_global_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(global_revenue_year_lod), 0)
+
+If you want APJ as the denominator, encode APJ inside the LOD expression:
+
+fields:
+  - name: apj_revenue_year_lod
+    expr: SUM(CASE WHEN source_grain = 'GL'
+                    AND scenario_id = 'ACTUAL'
+                    AND account_category = 'Revenue'
+                    AND region = 'APJ'
+                   THEN amount ELSE 0 END) OVER (PARTITION BY year(event_date))
+
+Then define:
+
+measures:
+  - name: pct_of_apj_revenue_year_fixed_lod
+    expr: MEASURE(actual_revenue) / NULLIF(ANY_VALUE(apj_revenue_year_lod), 0)
+
+This side-by-side comparison is a key teaching point:
+
+- Query filter changes visible rows.
+- Definition-time filter changes the fixed LOD denominator.
+
+Multiple excluded fields:
+Coarser LOD can exclude more than one field by adding multiple window entries.
+
+Example:
+
+measures:
+  - name: revenue_excluding_entity_and_product_family
+    expr: SUM(amount) FILTER (
+      WHERE source_grain = 'GL'
+        AND scenario_id = 'ACTUAL'
+        AND account_category = 'Revenue'
+    )
+    window:
+      - order: entity_name
+        range: all
+        semiadditive: last
+      - order: product_family
+        range: all
+        semiadditive: last
+
+  - name: pct_of_entity_product_visible_total
+    expr: MEASURE(actual_revenue)
+        / NULLIF(MEASURE(revenue_excluding_entity_and_product_family), 0)
+
+This is useful for drilldown dashboards.
+
+The visible row might be:
+
+APJ + Singapore Entity + Digital Platforms
+
+But the denominator can be:
+
+APJ total across all entities and product families
+
+without writing a custom subquery in every dashboard.
+
+Demo queries:
+
+Percent of global revenue:
+
+SELECT
+  region,
+  account_category,
+  MEASURE(actual_revenue) AS actual_revenue,
+  MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue_2025
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+Percent of APJ revenue:
+
+SELECT
+  region,
+  product_family,
+  MEASURE(actual_revenue) AS actual_revenue,
+  MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue_2025,
+  MEASURE(pct_of_apj_revenue_year_fixed_lod) AS pct_of_apj_revenue_2025
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+  AND region = 'APJ'
+GROUP BY ALL;
+
+Percent of region revenue:
+
+SELECT
+  region,
+  entity_name,
+  MEASURE(actual_revenue) AS entity_revenue,
+  MEASURE(region_revenue_excluding_entity) AS region_revenue,
+  MEASURE(pct_of_region_revenue) AS pct_of_region_revenue
+FROM finance_metric_view
+WHERE fiscal_year = 2025
+GROUP BY ALL;
+
+What to screenshot:
+
+1. Fixed LOD YAML fields.
+2. ANY_VALUE measure pattern.
+3. Query filtered to APJ showing global vs APJ denominator.
+4. Coarser LOD with range: all.
+5. Multiple excluded fields query output.
+
+Design guidance:
+
+- Use fixed LOD when the denominator should be stable.
+- Use coarser LOD when the denominator should respect filters but ignore some visible dimensions.
+- Always name LOD measures clearly. Percent of what?
+- Put comments on LOD fields and measures. These are subtle definitions.
+- Avoid hiding LOD behavior in dashboard SQL.
+
+Closing:
+LOD expressions are a major reason Metric Views feel like a real semantic layer.
+
+They move denominator logic out of dashboards and into governed definitions.
+
+That makes the metric easier to audit, easier to reuse, and much harder to accidentally redefine.
+

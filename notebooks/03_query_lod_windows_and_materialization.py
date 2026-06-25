@@ -94,9 +94,9 @@ SELECT
   region,
   product_family,
   MEASURE(actual_revenue) AS actual_revenue,
-  MEASURE(pct_of_global_revenue_fixed_lod) AS pct_of_global_revenue,
+  MEASURE(pct_of_global_revenue_year_fixed_lod) AS pct_of_global_revenue_2025,
   MEASURE(pct_of_product_family_revenue_fixed_lod) AS pct_of_product_family_revenue,
-  MEASURE(pct_of_apj_revenue_fixed_lod) AS pct_of_apj_revenue
+  MEASURE(pct_of_apj_revenue_year_fixed_lod) AS pct_of_apj_revenue_2025
 FROM {base_mv}
 WHERE fiscal_year = 2025
   AND region = 'APJ'

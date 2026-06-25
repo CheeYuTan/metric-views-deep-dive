@@ -73,15 +73,16 @@ LOD coverage:
   and product_family_revenue_lod.
 
 - Dataset-level aggregate
-  Covered by global_revenue_lod and pct_of_global_revenue_fixed_lod.
+  Covered by global_revenue_lod for the all-data example and
+  global_revenue_year_lod / pct_of_global_revenue_year_fixed_lod for fiscal-year examples.
 
 - Multi-level hierarchy aggregate
   Covered by account_category_revenue_lod and product_family_revenue_lod.
 
 - ANY_VALUE wrapper for fixed LOD fields in measures
-  Covered by pct_of_global_revenue_fixed_lod,
-  pct_of_account_category_revenue_fixed_lod,
-  and pct_of_product_family_revenue_fixed_lod.
+  Covered by pct_of_global_revenue_year_fixed_lod,
+  pct_of_account_category_revenue_year_fixed_lod,
+  pct_of_apj_revenue_year_fixed_lod, and pct_of_product_family_revenue_fixed_lod.
 
 - Fixed LOD filtering behavior
   Covered by the notebook fixed LOD filtering section and sql/03_validation_queries.sql.
