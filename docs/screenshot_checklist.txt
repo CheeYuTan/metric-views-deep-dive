@@ -1,0 +1,17 @@
+Screenshot checklist for the blog:
+
+1. Notebook intro and generated ERD diagram.
+2. Grain map diagram showing transaction, target, and balance grains.
+3. Sample rows from finance_semantic_base.
+4. Metric View YAML section showing fields, measures, and agent metadata.
+5. Fixed LOD query output with percent of global revenue.
+6. Coarser LOD query output with percent of region revenue.
+7. Window semantics output showing current month, YTD, rolling 12, prior year, and YoY growth.
+8. Semiadditive balance output showing quarter-level balances.
+9. Catalog Explorer view of finance_metric_view metadata.
+10. AI/BI dashboard executive overview page.
+11. AI/BI dashboard LOD drilldown page.
+12. AI/BI dashboard window semantics page.
+13. DESCRIBE EXTENDED output showing materialization refresh information.
+14. EXPLAIN EXTENDED output showing materialization query rewrite.
+15. Genie prompt example using synonyms such as sales, operating margin, and closing balance.

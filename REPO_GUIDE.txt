@@ -1,0 +1,46 @@
+Repository: metric-views-lod-finance-semantics
+
+Purpose:
+This repository contains a Databricks tutorial package for a sequel blog on Metric Views.
+It showcases level of detail expressions, advanced window semantics, agent metadata, and materialization.
+
+Main files:
+
+- PLAN.md
+  The approved project plan and article direction.
+
+- notebooks/01_metric_views_lod_finance_semantics.py
+  Databricks source notebook. Import this into a Databricks workspace and run it end to end.
+
+- sql/01_create_demo_data.sql
+  Standalone SQL setup for dimensions, fact tables, and the semantic base view.
+
+- sql/02_create_metric_view_with_materialization.sql
+  Standalone Metric View DDL with LOD, window semantics, agent metadata, and materialization.
+
+- sql/03_validation_queries.sql
+  Validation queries for LOD, windows, semiadditive balances, and materialization verification.
+
+- dashboard_queries/
+  Query files designed to become AI/BI Dashboard datasets.
+
+- assets/
+  Mermaid diagram sources for ERD, grain map, semantic architecture, and materialization flow.
+
+- docs/
+  Blog outline and screenshot checklist in plain text.
+
+Suggested run path:
+
+1. Import notebooks/01_metric_views_lod_finance_semantics.py into Databricks.
+2. Set the catalog and schema widgets.
+3. Run once with enable_materialization=false to validate the core Metric View.
+4. Re-run with enable_materialization=true on a supported serverless/runtime setup.
+5. Use dashboard_queries/ to create AI/BI Dashboard datasets.
+6. Capture screenshots listed in docs/screenshot_checklist.txt for the blog.
+
+Primary references:
+
+- https://docs.databricks.com/aws/en/business-semantics/metric-views/advanced-techniques
+- https://docs.databricks.com/aws/en/business-semantics/metric-views/level-of-detail
+- https://docs.databricks.com/aws/en/business-semantics/metric-views/materialization

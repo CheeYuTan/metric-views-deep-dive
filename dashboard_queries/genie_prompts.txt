@@ -1,0 +1,10 @@
+Suggested Genie-style prompts for the demo:
+
+1. Show YTD sales by region for 2025.
+2. Which entity has the highest operating margin?
+3. Show closing balance by account category and fiscal quarter.
+4. Compare current month revenue with the same month last year.
+5. What percent of region revenue does each entity contribute?
+6. Show rolling 12 month revenue by product family.
+7. Which product family has the largest negative budget variance?
+8. Show EBITDA margin by region and customer segment.
