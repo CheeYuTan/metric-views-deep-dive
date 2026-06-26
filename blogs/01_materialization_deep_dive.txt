@@ -282,6 +282,20 @@ After running it, open Query Profile and look for:
 month_region_product_account
 ```
 
+Screenshot:
+
+![Exact match scans the aggregated materialization](/Users/steven.tan/.cursor/projects/Users-steven-tan-Metric-View-Blog/assets/Screenshot_2026-06-26_at_9.13.24_AM-2c9fa09b-8282-4ace-a40d-4cf7007afcfa.png)
+
+What this shows:
+
+The query profile scans the generated materialization table ending in:
+
+```text
+month_region_product_account_1
+```
+
+There is no additional grouping step above the scan. That is exactly what we want for an exact match: the query asks for the same grain that the aggregated materialization already stores.
+
 ## Step 5: Rollup Match
 
 Rollup match means the query asks for fewer dimensions, and the measure is additive.
@@ -304,6 +318,20 @@ month_region_product_account
 ```
 
 The engine can roll up from product/account grain to region grain because `revenue` is additive.
+
+Screenshot:
+
+![Rollup match scans the same aggregate and groups again](/Users/steven.tan/.cursor/projects/Users-steven-tan-Metric-View-Blog/assets/Screenshot_2026-06-26_at_9.14.24_AM-6a47fb0f-ced2-412e-b21c-8ab66fd0d2a5.png)
+
+What this shows:
+
+The query profile still scans the same generated materialization table:
+
+```text
+month_region_product_account_1
+```
+
+But this time there is a `Grouping Aggregate` operator above the scan. That is the rollup. Databricks reads the more detailed materialization and aggregates it to the coarser query grain.
 
 ## Step 6: Non-Additive Fallback
 
@@ -330,6 +358,20 @@ semantic_snapshot
 
 This is still useful. The query does not use the aggregate, but it avoids recomputing the expensive fact-to-dimension joins and field preparation.
 
+Screenshot:
+
+![Unaggregated match scans semantic snapshot](/Users/steven.tan/.cursor/projects/Users-steven-tan-Metric-View-Blog/assets/Screenshot_2026-06-26_at_9.15.35_AM-8b261530-e523-474a-854d-939b2e084b04.png)
+
+What this shows:
+
+The query profile scans the generated materialization table ending in:
+
+```text
+semantic_snapshot_1
+```
+
+This query uses `COUNT(DISTINCT customer_id)`. Distinct counts cannot safely roll up from partial aggregate rows, so Databricks chooses the unaggregated materialization instead of `month_region_product_account`.
+
 ## Step 7: Source Fallback
 
 To prove true source fallback, create an aggregated-only Metric View:
@@ -341,6 +383,16 @@ mat_finance_metric_view_agg_only
 It has an aggregate materialization for revenue, but no unaggregated materialization.
 
 If you query `unique_customers`, there is no exact aggregate and no unaggregated snapshot, so the query must fall back to the source path.
+
+Screenshot:
+
+![Source fallback scans source tables](/Users/steven.tan/.cursor/projects/Users-steven-tan-Metric-View-Blog/assets/image-eb2c8235-3a90-4d3d-b95e-a685c3fc81f8.png)
+
+What this shows:
+
+The query profile no longer shows `month_region_product_account` or `semantic_snapshot`.
+
+Instead, the plan expands to the underlying source path and scans the base fact and dimension tables required by the Metric View joins. This is the final fallback path when no available materialization can answer the query.
 
 ## What We Prove
 
