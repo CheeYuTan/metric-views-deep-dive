@@ -1,4 +1,4 @@
-## Automatic Query Rewrite: Exact, Rollup, Unaggregated, and Source Fallback
+## Seeing Materialization in Action: How Query Rewrite Chooses the Right Path
 
 Once materializations exist, users still query the Metric View.
 
