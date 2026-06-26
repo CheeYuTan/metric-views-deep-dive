@@ -19,13 +19,6 @@ This repo contains the notebooks and screenshots needed to reproduce the materia
   - Creates the materialized Metric View.
   - Demonstrates exact match, rollup match, unaggregated match, and source fallback.
 
-### Article Draft and Sections
-
-- `blogs/01_materialization_deep_dive.md`
-- `blogs/sections/materialization_architecture.md`
-- `blogs/sections/automatic_query_rewrite.md`
-- `blogs/sections/materialization_closing.md`
-
 ### Query Profile Screenshots
 
 - `assets/query_profiles/`
