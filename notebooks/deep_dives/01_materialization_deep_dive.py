@@ -65,7 +65,7 @@ def render_mermaid(diagram: str) -> None:
 # MAGIC
 # MAGIC Key idea:
 # MAGIC
-# MAGIC The user still queries `MEASURE(revenue)`. The optimizer decides whether to read from an aggregated materialization, an unaggregated materialization, or the source.
+# MAGIC The user still queries `MEASURE(revenue)`. Query optimization decides whether to read from an aggregated materialization, an unaggregated materialization, or the source tables.
 
 # COMMAND ----------
 
@@ -73,19 +73,18 @@ render_mermaid(
     """
 flowchart TB
   USER["User query<br/>SELECT ... MEASURE(...)"]
-  MV["Metric View<br/>fields + measures"]
-  PIPE["Managed Lakeflow pipeline"]
-  UNAGG["Unaggregated materialization<br/>prepared source snapshot"]
+  OPT["Query optimization<br/>aggregate-aware rewrite"]
   AGG["Aggregated materialization<br/>precomputed dashboard grain"]
-  OPT["Optimizer<br/>aggregate-aware rewrite"]
+  UNAGG["Unaggregated materialization<br/>prepared source snapshot"]
+  SRC["Source fact + dimension tables"]
+  SDP["Spark Declarative Pipelines<br/>manage materializations"]
 
-  MV --> PIPE
-  PIPE --> UNAGG
-  PIPE --> AGG
   USER --> OPT
   OPT --> AGG
   OPT --> UNAGG
-  OPT --> MV
+  OPT --> SRC
+  SDP -. maintains .-> AGG
+  SDP -. maintains .-> UNAGG
 """
 )
 

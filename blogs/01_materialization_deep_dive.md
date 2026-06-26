@@ -97,9 +97,15 @@ Metric View materialization keeps the semantic surface stable.
 
 ## Materialization Architecture
 
-[Insert Diagram 2: Materialization architecture showing user query, Metric View, managed Lakeflow pipeline, unaggregated materialization, aggregated materialization, and optimizer rewrite. Rendered in notebook 01.]
+[Insert Diagram 2: Materialization architecture showing user query -> query optimization -> aggregated materialization / unaggregated materialization / source tables. The aggregated and unaggregated materializations are maintained by Spark Declarative Pipelines. Rendered in notebook 01.]
 
-The user still queries the Metric View. Databricks decides the physical path.
+The user still queries the Metric View. Query optimization decides the physical path:
+
+- Read an **aggregated materialization** when the query can be answered by precomputed aggregates.
+- Read an **unaggregated materialization** when the query cannot use an aggregate but can use the prepared row-level snapshot.
+- Fall back to the **source tables** when no materialization can answer the query.
+
+The materializations themselves are managed by Spark Declarative Pipelines. They are implementation details behind the Metric View, not separate tables that users need to choose manually.
 
 ## Step 1: Define the Non-Materialized Metric View
 
@@ -245,7 +251,7 @@ This is useful when dashboards repeatedly query the same or coarser grains.
 
 ## Step 3: Inspect Refresh Status
 
-Materialization creates a managed Lakeflow pipeline.
+Materialization creates managed Spark Declarative Pipeline resources behind the Metric View.
 
 Inspect it with:
 
