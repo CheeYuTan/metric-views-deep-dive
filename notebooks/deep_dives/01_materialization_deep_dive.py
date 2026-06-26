@@ -395,22 +395,17 @@ flowchart TB
 
 # COMMAND ----------
 
-display(
-    spark.sql(
-        f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  product_family,
-  account_category,
-  MEASURE(revenue) AS revenue
-FROM {full_mat_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-    )
-)
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC   fiscal_year,
+# MAGIC   fiscal_month,
+# MAGIC   region,
+# MAGIC   product_family,
+# MAGIC   account_category,
+# MAGIC   MEASURE(revenue) AS revenue
+# MAGIC FROM lakemeter_catalog.metric_views_lod_demo.mat_finance_metric_view_materialized
+# MAGIC WHERE fiscal_year = 2025
+# MAGIC GROUP BY ALL
 
 # COMMAND ----------
 
@@ -435,20 +430,15 @@ GROUP BY ALL
 
 # COMMAND ----------
 
-display(
-    spark.sql(
-        f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  MEASURE(revenue) AS revenue
-FROM {full_mat_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-    )
-)
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC   fiscal_year,
+# MAGIC   fiscal_month,
+# MAGIC   region,
+# MAGIC   MEASURE(revenue) AS revenue
+# MAGIC FROM lakemeter_catalog.metric_views_lod_demo.mat_finance_metric_view_materialized
+# MAGIC WHERE fiscal_year = 2025
+# MAGIC GROUP BY ALL
 
 # COMMAND ----------
 
@@ -469,20 +459,15 @@ GROUP BY ALL
 
 # COMMAND ----------
 
-display(
-    spark.sql(
-        f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  MEASURE(unique_customers) AS unique_customers
-FROM {full_mat_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-    )
-)
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC   fiscal_year,
+# MAGIC   fiscal_month,
+# MAGIC   region,
+# MAGIC   MEASURE(unique_customers) AS unique_customers
+# MAGIC FROM lakemeter_catalog.metric_views_lod_demo.mat_finance_metric_view_materialized
+# MAGIC WHERE fiscal_year = 2025
+# MAGIC GROUP BY ALL
 
 # COMMAND ----------
 
@@ -549,17 +534,12 @@ while status != "Succeeded" and time.time() < deadline:
 if status != "Succeeded":
     raise TimeoutError(f"Aggregated-only refresh did not succeed. Last status: {status}")
 
-display(
-    spark.sql(
-        f"""
-SELECT
-  fiscal_year,
-  fiscal_month,
-  region,
-  MEASURE(unique_customers) AS unique_customers
-FROM {agg_only_mv}
-WHERE fiscal_year = 2025
-GROUP BY ALL
-"""
-    )
-)
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC   fiscal_year,
+# MAGIC   fiscal_month,
+# MAGIC   region,
+# MAGIC   MEASURE(unique_customers) AS unique_customers
+# MAGIC FROM lakemeter_catalog.metric_views_lod_demo.mat_finance_metric_view_agg_only
+# MAGIC WHERE fiscal_year = 2025
+# MAGIC GROUP BY ALL
