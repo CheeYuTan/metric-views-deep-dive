@@ -1,62 +1,45 @@
-# Metric Views Deep Dive
+# Databricks Metric Views Deep Dive Part 1: Materialization
 
-Companion repo for a Databricks Metric Views deep-dive blog series.
+Companion repo for the article:
 
-Repository link:
+[Databricks Metric Views Deep Dive Part 1: Materialization Without Breaking the Semantic Layer](https://medium.com/@cheeyutcy/databricks-metric-views-deep-dive-part-1-materialization-without-breaking-the-semantic-layer-a0da85c1926a?source=friends_link&sk=ab2c03b750fdc9b6f3376ee216587bdb)
 
-https://github.com/CheeYuTan/metric-views-deep-dive
+This repo contains the notebooks and screenshots needed to reproduce the materialization walkthrough.
 
-## What Is Included
+## Included Assets
 
-### Blog Drafts
+### Notebooks
+
+- `notebooks/deep_dives/00_materialization_base_tables.py`
+  - Creates the finance fact and dimension tables used in the article.
+  - Generates `986,850` fact rows.
+
+- `notebooks/deep_dives/01_materialization_deep_dive.py`
+  - Creates the non-materialized Metric View.
+  - Creates the materialized Metric View.
+  - Demonstrates exact match, rollup match, unaggregated match, and source fallback.
+
+### Article Draft and Sections
 
 - `blogs/01_materialization_deep_dive.md`
-- `blogs/02_level_of_detail_deep_dive.txt`
-- `blogs/03_window_semantics_deep_dive.txt`
-
-### Modular Blog Sections
-
 - `blogs/sections/materialization_architecture.md`
 - `blogs/sections/automatic_query_rewrite.md`
 - `blogs/sections/materialization_closing.md`
 
-### Databricks Notebooks
-
-General tutorial notebooks:
-
-- `notebooks/01_generate_synthetic_finance_data.py`
-- `notebooks/02_design_metric_view_semantic_layer.py`
-- `notebooks/03_query_lod_windows_and_materialization.py`
-- `notebooks/04_dashboard_story.py`
-
-Deep-dive notebooks:
-
-- `notebooks/deep_dives/00_materialization_base_tables.py`
-- `notebooks/deep_dives/01_materialization_deep_dive.py`
-- `notebooks/deep_dives/02_level_of_detail_deep_dive.py`
-- `notebooks/deep_dives/03_window_semantics_deep_dive.py`
-
-### Images
+### Query Profile Screenshots
 
 - `assets/query_profiles/`
 
-These are Query Profile screenshots used in the materialization article.
+These screenshots are used in the article to show which materialization path Databricks selected.
 
-## Recommended Run Order
+## Run Order
 
-For the materialization deep dive:
+Import and run these notebooks in Databricks:
 
-1. Import and run `notebooks/deep_dives/00_materialization_base_tables.py`
-2. Import and run `notebooks/deep_dives/01_materialization_deep_dive.py`
+1. `notebooks/deep_dives/00_materialization_base_tables.py`
+2. `notebooks/deep_dives/01_materialization_deep_dive.py`
 
-For the broader Metric Views tutorial:
-
-1. Import and run `notebooks/01_generate_synthetic_finance_data.py`
-2. Import and run `notebooks/02_design_metric_view_semantic_layer.py`
-3. Import and run `notebooks/03_query_lod_windows_and_materialization.py`
-4. Import and run `notebooks/04_dashboard_story.py`
-
-## Latest Validated Materialization Run
+## Latest Validated Run
 
 The materialization notebooks were validated on the Lakemeter Databricks workspace:
 
