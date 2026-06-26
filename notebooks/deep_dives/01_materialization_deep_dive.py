@@ -69,27 +69,6 @@ def render_mermaid(diagram: str) -> None:
 
 # COMMAND ----------
 
-render_mermaid(
-    """
-flowchart TB
-  USER["User query<br/>SELECT ... MEASURE(...)"]
-  OPT["Query optimization<br/>aggregate-aware rewrite"]
-  AGG["Aggregated materialization<br/>precomputed dashboard grain"]
-  UNAGG["Unaggregated materialization<br/>prepared source snapshot"]
-  SRC["Source fact + dimension tables"]
-  SDP["Spark Declarative Pipelines<br/>manage materializations"]
-
-  USER --> OPT
-  OPT --> AGG
-  OPT --> UNAGG
-  OPT --> SRC
-  SDP -. maintains .-> AGG
-  SDP -. maintains .-> UNAGG
-"""
-)
-
-# COMMAND ----------
-
 # MAGIC %md
 # MAGIC ## Create the Non-Materialized Metric View
 # MAGIC

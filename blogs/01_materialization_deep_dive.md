@@ -95,18 +95,6 @@ That makes queries faster, but it creates another problem: users now need to kno
 
 Metric View materialization keeps the semantic surface stable.
 
-## Materialization Architecture
-
-[Insert Diagram 2: Materialization architecture showing user query -> query optimization -> aggregated materialization / unaggregated materialization / source tables. The aggregated and unaggregated materializations are maintained by Spark Declarative Pipelines. Rendered in notebook 01.]
-
-The user still queries the Metric View. Query optimization decides the physical path:
-
-- Read an **aggregated materialization** when the query can be answered by precomputed aggregates.
-- Read an **unaggregated materialization** when the query cannot use an aggregate but can use the prepared row-level snapshot.
-- Fall back to the **source tables** when no materialization can answer the query.
-
-The materializations themselves are managed by Spark Declarative Pipelines. They are implementation details behind the Metric View, not separate tables that users need to choose manually.
-
 ## Step 1: Define the Non-Materialized Metric View
 
 First create the semantic contract without materialization:
@@ -166,40 +154,15 @@ $$;
 
 This view defines meaning.
 
-## Step 2: Define the Materialized Variant
+## Step 2: Add Materialization
 
-Then create a separate optimized variant:
+The non-materialized Metric View defines the meaning of the metrics.
 
-```sql
-CREATE OR REPLACE VIEW mat_finance_metric_view_materialized
-WITH METRICS
-LANGUAGE YAML
-AS $$
-version: 1.1
-source: lakemeter_catalog.metric_views_lod_demo.mat_finance_metric_view
+To accelerate it, we create a materialized variant and add a `materialization:` block.
 
-fields:
-  - name: fiscal_year
-    expr: fiscal_year
-  - name: fiscal_month
-    expr: fiscal_month
-  - name: region
-    expr: region
-  - name: product_family
-    expr: product_family
-  - name: account_category
-    expr: account_category
+This is the important part:
 
-measures:
-  - name: revenue
-    expr: MEASURE(revenue)
-  - name: cogs
-    expr: MEASURE(cogs)
-  - name: opex
-    expr: MEASURE(opex)
-  - name: unique_customers
-    expr: MEASURE(unique_customers)
-
+```yaml
 materialization:
   schedule: every 6 hours
   mode: relaxed
@@ -219,10 +182,9 @@ materialization:
         - revenue
         - cogs
         - opex
-$$;
 ```
 
-This view defines acceleration.
+The user still queries the Metric View. They do not query `semantic_snapshot` or `month_region_product_account` directly.
 
 ## Unaggregated vs Aggregated Materialization
 
