@@ -31,9 +31,3 @@ Import and run these notebooks in Databricks:
 
 1. `notebooks/deep_dives/00_materialization_base_tables.py`
 2. `notebooks/deep_dives/01_materialization_deep_dive.py`
-
-## Latest Validated Run
-
-The materialization notebooks were validated on the Lakemeter Databricks workspace:
-
-https://fe-vm-lakemeter.cloud.databricks.com/?o=335310294452632#job/352265414516911/run/30223876085768
