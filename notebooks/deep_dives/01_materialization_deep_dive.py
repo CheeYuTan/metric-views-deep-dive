@@ -534,6 +534,8 @@ while status != "Succeeded" and time.time() < deadline:
 if status != "Succeeded":
     raise TimeoutError(f"Aggregated-only refresh did not succeed. Last status: {status}")
 
+# COMMAND ----------
+
 # MAGIC %sql
 # MAGIC SELECT
 # MAGIC   fiscal_year,
