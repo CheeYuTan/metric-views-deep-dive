@@ -193,28 +193,11 @@ display(spark.sql(f"DESCRIBE EXTENDED {base_mv}"))
 # MAGIC
 # MAGIC - `semantic_snapshot` is **unaggregated**: it stores prepared rows after the Metric View has applied joins and fields.
 # MAGIC - `month_region_product_account` is **aggregated**: it stores precomputed metric results at a chosen dashboard grain.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            (
-                "unaggregated",
-                "semantic_snapshot",
-                "Prepared row-level model after Metric View joins and fields.",
-                "When source preparation is expensive or query shapes vary.",
-            ),
-            (
-                "aggregated",
-                "month_region_product_account",
-                "Precomputed GROUP BY result for selected dimensions and measures.",
-                "When dashboards repeatedly query the same grain or a coarser grain.",
-            ),
-        ],
-        ["materialization_type", "demo_name", "what_it_stores", "best_for"],
-    )
-)
+# MAGIC
+# MAGIC | Materialization type | Demo name | What it stores | Best for |
+# MAGIC |---|---|---|---|
+# MAGIC | `unaggregated` | `semantic_snapshot` | Prepared row-level model after Metric View joins and fields. | Source preparation is expensive or query shapes vary. |
+# MAGIC | `aggregated` | `month_region_product_account` | Precomputed `GROUP BY` result for selected dimensions and measures. | Dashboards repeatedly query the same grain or a coarser grain. |
 
 # COMMAND ----------
 
@@ -366,38 +349,15 @@ flowchart TB
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC %md
 # MAGIC ## Three Simple Rewrite Examples
 # MAGIC
 # MAGIC Instead of timing the queries, we will inspect the optimizer plan. Each example asks a simple question and checks which materialization the optimizer chooses.
-
-# COMMAND ----------
-
-display(
-    spark.createDataFrame(
-        [
-            (
-                "1. Exact match",
-                "Revenue by year, month, region, product family, and account category",
-                "Same grain as the aggregated materialization",
-                "month_region_product_account",
-            ),
-            (
-                "2. Rollup match",
-                "Revenue by year, month, and region",
-                "Coarser than the aggregated materialization, using additive revenue",
-                "month_region_product_account",
-            ),
-            (
-                "3. Unaggregated match",
-                "Unique customers by year, month, and region",
-                "Non-additive distinct count cannot roll up safely",
-                "semantic_snapshot",
-            ),
-        ],
-        ["scenario", "business_question", "why_this_path", "expected_materialization"],
-    )
-)
+# MAGIC
+# MAGIC | Scenario | Business question | Why this path | Expected materialization |
+# MAGIC |---|---|---|---|
+# MAGIC | Exact match | Revenue by year, month, region, product family, and account category | Same grain as the aggregated materialization | `month_region_product_account` |
+# MAGIC | Rollup match | Revenue by year, month, and region | Coarser than the aggregated materialization, using additive revenue | `month_region_product_account` |
+# MAGIC | Unaggregated match | Unique customers by year, month, and region | Non-additive distinct count cannot roll up safely | `semantic_snapshot` |
 
 # COMMAND ----------
 
